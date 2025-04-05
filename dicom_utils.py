@@ -70,6 +70,7 @@ def read_dicom_info(input):
             SeriesInstanceUID=ds.SeriesInstanceUID,
             SOPInstanceUID=ds.SOPInstanceUID,
             StudyInstanceUID=ds.StudyInstanceUID,
+            ImageOrientationPatient=np.array(ds.ImageOrientationPatient) if hasattr(ds, 'ImageOrientationPatient') else None,
             InstanceNumber=InstanceNumber,
             SliceLocation=float(ds.SliceLocation) if hasattr(ds, 'SliceLocation') else None,
             ImagePositionPatient=np.array(ds.ImagePositionPatient) if hasattr(ds, 'ImagePositionPatient') else None,
@@ -107,11 +108,13 @@ def parse_osirix_sr(osirix_sr):
     except Exception as e:
         raise ValueError(f"Failed to unserialize EncapsulatedDocument: {e}")
 
-    rois = []
+    rois = Dotdict()
     for d in data:
         n = len(d["points"])
         coords = np.array(
             [np.array(list(p.values())[0][1:-1].split(", "), dtype=np.float32) for p in d["points"]]
         )
-        rois.append(Dotdict(name=d["name"], coords=coords))
+        if d["name"] not in rois:
+            rois[d["name"]] = []
+        rois[d["name"]].append(coords)
     return rois

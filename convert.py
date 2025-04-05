@@ -1,4 +1,4 @@
-import os, sys, shutil, argparse, re, itertools
+import os, json, shutil, argparse, re, itertools
 from glob import glob
 import os.path as osp
 from warnings import warn
@@ -11,6 +11,7 @@ from pydicom import dcmread
 from vlkit.geometry import polygon2mask
 from vlkit.dicom.group import group_study, group_series
 from vlkit.image import normalize
+from vlkit.visualization import overlay_mask
 
 from rt_utils import RTStructBuilder
 
@@ -108,35 +109,52 @@ def process(data_dir):
             # extract ROI and names
             named_masks = dict()
 
-            # check if the series is in inferior-superior direction
-            inf2sup = series[0].ImagePositionPatient[2] < series[-1].ImagePositionPatient[2]
-
+            # z coordinates of the top-left corner of the slices
+            # this is used to sort the slices
+            # if zs has duplicate values, we cannot use it to sort the slices
+            # this happens to some generated/computed series
+            # e.g. diffusion of different b-values with the same slice location
+            zs = np.array([ds.ImagePositionPatient[2] for ds in series])
+            if np.unique(zs).size != zs.size:
+                raise RuntimeError(f"Duplicated z coordinates in {series[0].fullpath}. This series is not supported.")
+            zorder = np.argsort(np.array([ds.ImagePositionPatient[2] for ds in series]))
             for osx in osirix_sr:
                 # corresponding dicom
                 corres_dicom = SOPInstanceUID_lookup_table[osirix_get_reference_uid(osx)]
                 instance_number = int(corres_dicom.InstanceNumber)
-                roi_idx = instance_number if inf2sup else d - instance_number + 1
+                zord = zorder[instance_number - 1]
                 rois = parse_osirix_sr(dcmread(osx.fullpath))
-                for roi in rois:
+                for name, coords in rois.items():
                     # convert polygons to binary mask
-                    mask1 = polygon2mask(roi.coords, h, w)
+                    if len(coords) == 1:
+                        mask1 = polygon2mask(coords[0], h, w)
+                    elif len(coords) > 1:
+                        mask1 = np.logical_or(*[polygon2mask(c, h, w) for c in coords])
+                    else:
+                        raise RuntimeError(f"{osx.fullpath} ROI name {name} has {len(coords)} polygon.")
                     # save mask and polygon
-                    msk_path = corres_dicom.fullpath + f".{roi.name}.mask"
-                    polygon_path = corres_dicom.fullpath + f".{roi.name}.poly.npy"
-                    Image.fromarray(
-                        normalize(dcmread(corres_dicom.fullpath).pixel_array, 0, 255).astype(np.uint8)
+                    msk_path = corres_dicom.fullpath + f".{name}.mask"
+                    img8 = normalize(dcmread(corres_dicom.fullpath).pixel_array, 0, 255).astype(np.uint8)
+                    Image.fromarray(overlay_mask(
+                        img8, mask1,
+                        alpha=0.2,
+                        show_boundary=True, boundary_color=(0, 255, 0))
                     ).save(corres_dicom.fullpath + ".png")
-                    np.save(msk_path + ".npy", mask1)
-                    np.save(polygon_path, roi.coords)
-                    Image.fromarray((mask1 * 255).astype(np.uint8)).save(msk_path + ".png")
                     #
-                    if roi.name not in named_masks:
-                        named_masks[roi.name] = np.zeros((h, w, d), dtype=bool)
-                    named_masks[roi.name][:, :, roi_idx] = mask1
+                    np.save(msk_path + ".npy", mask1)
+                    Image.fromarray((mask1 * 255).astype(np.uint8)).save(msk_path + ".png")
+                    # save polygon coords into json
+                    with open(f"{corres_dicom.fullpath}.{name}.json", "w") as f:
+                        json.dump([c.tolist() for c in coords], f)
+                    #
+                    if name not in named_masks:
+                        named_masks[name] = np.zeros((h, w, d), dtype=bool)
+                    named_masks[name][:, :, zord] = mask1
 
             # if is there any valid ROI
             if len(named_masks) > 0:
                 for name, mask in named_masks.items():
+                    print(name, np.where(mask.sum(axis=(0, 1)).astype(bool)))
                     rtstruct.add_roi(mask, name=name)
 
                 # save the RTStruct
