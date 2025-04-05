@@ -26,8 +26,8 @@ This tool parseses data from OsiriX files and converts it into widely compatible
 ## Quick start
 
 ```bash
-# clone the code, do not omit the --recursive option.
-git clone https://github.com/intcomp/OsiriXConvert --recursive
+# clone the code
+git clone https://github.com/intcomp/OsiriXConvert
 cd OsiriXConvert
 # install dependencies
 pip install -r requirements.txt

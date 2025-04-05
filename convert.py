@@ -5,11 +5,12 @@ from warnings import warn
 
 import nibabel as nib
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from pydicom import dcmread
 from vlkit.geometry import polygon2mask
 from vlkit.dicom.group import group_study, group_series
+from vlkit.dicom import get_pixel_to_patient_transformation_matrix
 from vlkit.image import normalize
 from vlkit.visualization import overlay_mask
 
@@ -165,10 +166,14 @@ def process(data_dir):
                 print(f"Saved structure set to \"{save_path}\"")
                 rtstruct.save(save_path)
 
+                # transformation matrix
+                trans_matrix = get_pixel_to_patient_transformation_matrix(
+                    sorted(series, key=lambda x: x.ImagePositionPatient[2])
+                )
                 # save mask to Nifti
                 # be aware that the Nifti is alwasy in inferior-superior direction
                 for name, mask in named_masks.items():
-                    nifti_img = nib.Nifti1Image(mask.astype(np.uint8), np.eye(4))
+                    nifti_img = nib.Nifti1Image(mask.astype(np.uint8), trans_matrix)
                     nifti_fn = osp.join(study_prefix, f"nifti-{name}.nii.gz")
                     nib.save(nifti_img, nifti_fn)
                     print(f"Saved Nifti for ROI \"{name}\" to \"{nifti_fn}\".")

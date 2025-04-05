@@ -70,9 +70,10 @@ def read_dicom_info(input):
             SeriesInstanceUID=ds.SeriesInstanceUID,
             SOPInstanceUID=ds.SOPInstanceUID,
             StudyInstanceUID=ds.StudyInstanceUID,
-            ImageOrientationPatient=np.array(ds.ImageOrientationPatient) if hasattr(ds, 'ImageOrientationPatient') else None,
             InstanceNumber=InstanceNumber,
+            PixelSpacing=ds.PixelSpacing if hasattr(ds, 'PixelSpacing') else None,
             SliceLocation=float(ds.SliceLocation) if hasattr(ds, 'SliceLocation') else None,
+            ImageOrientationPatient=np.array(ds.ImageOrientationPatient) if hasattr(ds, 'ImageOrientationPatient') else None,
             ImagePositionPatient=np.array(ds.ImagePositionPatient) if hasattr(ds, 'ImagePositionPatient') else None,
             is_osirix_sr=hasattr(ds, 'EncapsulatedDocument'))
         ds = Dotdict(ds)
