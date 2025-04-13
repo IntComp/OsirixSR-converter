@@ -125,6 +125,15 @@ def process(data_dir):
                 instance_number = int(corres_dicom.InstanceNumber)
                 zord = zorder[instance_number - 1]
                 rois = parse_osirix_sr(dcmread(osx.fullpath))
+
+                # save polygon coords into json
+                with open(f"{corres_dicom.fullpath}.roi.json", "w") as f:
+                    json.dump(
+                        [{"name": name, "polygon": [c.tolist() for c in coords] } for name, coords in rois.items()],
+                        f,
+                        indent=4
+                    )
+
                 for name, coords in rois.items():
                     # convert polygons to binary mask
                     if len(coords) == 1:
@@ -144,9 +153,6 @@ def process(data_dir):
                     #
                     np.save(msk_path + ".npy", mask1)
                     Image.fromarray((mask1 * 255).astype(np.uint8)).save(msk_path + ".png")
-                    # save polygon coords into json
-                    with open(f"{corres_dicom.fullpath}.{name}.json", "w") as f:
-                        json.dump([c.tolist() for c in coords], f)
                     #
                     if name not in named_masks:
                         named_masks[name] = np.zeros((h, w, d), dtype=bool)
