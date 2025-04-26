@@ -81,7 +81,6 @@ def read_dicom_info(input):
     return results
 
 
-
 def build_SOPInstanceUID_lookup_table(dicoms):
     SOPInstanceUID_lookup_table = dict()
     for ds in dicoms:
@@ -96,8 +95,11 @@ def find_osirix_sr(dicoms):
     return [ds for ds in dicoms if ds.is_osirix_sr]
 
 
-def parse_osirix_sr(osirix_sr):
-    bytes_data = osirix_sr.EncapsulatedDocument
+def parse_osirix_sr(osirix_sr: str):
+    if not osp.exists(osirix_sr):
+        raise FileNotFoundError(f"File {osirix_sr} does not exist.")
+    sr = pydicom.dcmread(osirix_sr)
+    bytes_data = sr.EncapsulatedDocument
     if bytes_data is None:
         raise ValueError("EncapsulatedDocument is empty")
 
@@ -112,9 +114,15 @@ def parse_osirix_sr(osirix_sr):
     rois = Dotdict()
     for d in data:
         n = len(d["points"])
+
+        if n == 0:
+            warn(f"Empty points for ROI {d["name"]} in {osirix_sr}.")
+            continue
+
         coords = np.array(
             [np.array(list(p.values())[0][1:-1].split(", "), dtype=np.float32) for p in d["points"]]
-        )
+        ).reshape(-1, 2)
+
         if d["name"] not in rois:
             rois[d["name"]] = []
         rois[d["name"]].append(coords)

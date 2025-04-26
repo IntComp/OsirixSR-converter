@@ -124,7 +124,11 @@ def process(data_dir):
                 corres_dicom = SOPInstanceUID_lookup_table[osirix_get_reference_uid(osx)]
                 instance_number = int(corres_dicom.InstanceNumber)
                 zord = zorder[instance_number - 1]
-                rois = parse_osirix_sr(dcmread(osx.fullpath))
+                rois = parse_osirix_sr(osx.fullpath)
+
+                if len(rois) == 0:
+                    warn(f"\"{osx.fullpath}\" has no ROI, ignored.")
+                    continue
 
                 # save polygon coords into json
                 with open(f"{corres_dicom.fullpath}.roi.json", "w") as f:
@@ -136,12 +140,19 @@ def process(data_dir):
 
                 for name, coords in rois.items():
                     # convert polygons to binary mask
+                    assert all([c.ndim == 2 for c in coords]), f"OsirixSR {osx.fullpath} dcm {corres_dicom.fullpath}: ROI {name} has non-2D polygon."
                     if len(coords) == 1:
                         mask1 = polygon2mask(coords[0], h, w)
                     elif len(coords) > 1:
                         mask1 = np.logical_or(*[polygon2mask(c, h, w) for c in coords])
                     else:
                         raise RuntimeError(f"{osx.fullpath} ROI name {name} has {len(coords)} polygon.")
+                    # save polygon coords
+                    try:
+                        np.save(corres_dicom.fullpath + f".{name}.poly.npy", np.stack(coords, axis=0))
+                    except:
+                        warn(f"Cannot save {corres_dicom.fullpath} ROI name {name} polygon coords.")
+                        continue
                     # save mask and polygon
                     msk_path = corres_dicom.fullpath + f".{name}.mask"
                     img8 = normalize(dcmread(corres_dicom.fullpath).pixel_array, 0, 255).astype(np.uint8)
@@ -161,7 +172,6 @@ def process(data_dir):
             # if is there any valid ROI
             if len(named_masks) > 0:
                 for name, mask in named_masks.items():
-                    print(name, np.where(mask.sum(axis=(0, 1)).astype(bool)))
                     rtstruct.add_roi(mask, name=name)
 
                 # save the RTStruct
@@ -176,6 +186,7 @@ def process(data_dir):
                 trans_matrix = get_pixel_to_patient_transformation_matrix(
                     sorted(series, key=lambda x: x.ImagePositionPatient[2])
                 )
+
                 # save mask to Nifti
                 # be aware that the Nifti is alwasy in inferior-superior direction
                 for name, mask in named_masks.items():
